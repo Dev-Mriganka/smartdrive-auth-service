@@ -1,0 +1,84 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.5.5'
+    id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'com.smartdrive'
+version = '0.0.1-SNAPSHOT'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
+configurations {
+    compileOnly {
+        extendsFrom annotationProcessor
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencyManagement {
+    imports {
+        mavenBom "software.amazon.awssdk:bom:2.27.21"
+    }
+}
+
+dependencies {
+    // Spring Boot Starters
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.springframework.boot:spring-boot-starter-aop'
+    
+    // OAuth2 Authorization Server (Latest Spring Authorization Server)
+    implementation 'org.springframework.security:spring-security-oauth2-authorization-server:1.5.0'
+    
+    // OAuth2 Client for Social Login
+    implementation 'org.springframework.boot:spring-boot-starter-oauth2-client'
+    
+    // Social Login Providers
+    implementation 'org.springframework.security:spring-security-oauth2-jose'
+    
+    // Database
+    implementation 'org.postgresql:postgresql'
+    
+    // Modern JWT Library (Replacing deprecated JJWT)
+    implementation 'com.nimbusds:nimbus-jose-jwt:9.37.3'
+    
+    // Rate Limiting (Simple in-memory implementation for now)
+    // TODO: Add proper Bucket4j Redis integration when dependency is available
+    
+    // Logging
+    implementation 'net.logstash.logback:logstash-logback-encoder:7.4'
+
+    // Swagger/OpenAPI Documentation
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.9'
+
+    // Observability & Tracing
+    implementation 'io.micrometer:micrometer-tracing-bridge-otel'
+    implementation "io.opentelemetry:opentelemetry-exporter-otlp"
+    implementation 'io.opentelemetry:opentelemetry-sdk'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    implementation 'io.micrometer:micrometer-registry-prometheus'
+
+    // Lombok
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+
+    // Testing
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.security:spring-security-test'
+
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
