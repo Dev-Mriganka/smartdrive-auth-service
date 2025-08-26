@@ -10,11 +10,6 @@ EXPOSE 8085
 
 # Set environment variables
 ENV SPRING_PROFILES_ACTIVE=docker
-ENV POSTGRES_HOST=postgres
-ENV POSTGRES_PORT=5432
-ENV POSTGRES_DB=smartdrive_auth
-ENV POSTGRES_USER=postgres
-ENV POSTGRES_PASSWORD=password
 ENV REDIS_HOST=redis
 ENV REDIS_PORT=6379
 ENV JWT_SECRET=your-256-bit-secret-key-here-make-it-long-and-secure

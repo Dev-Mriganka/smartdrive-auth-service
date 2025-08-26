@@ -2,8 +2,6 @@ package com.smartdrive.authservice.controller;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationConsentService;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService;
@@ -27,7 +25,6 @@ public class OAuth2ConsentController {
 
     private final RegisteredClientRepository registeredClientRepository;
     private final OAuth2AuthorizationConsentService authorizationConsentService;
-    private final OAuth2AuthorizationService authorizationService;
 
     @GetMapping("/oauth2/consent")
     public String consent(Principal principal, Model model,

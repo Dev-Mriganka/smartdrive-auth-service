@@ -9,8 +9,8 @@ spring:
     active: docker
   
   datasource:
-    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:smartdrive_auth}
-    username: ${POSTGRES_USER:postgres}
+    url: jdbc:postgresql://${POSTGRES_HOST:postgres-auth}:${POSTGRES_PORT:5432}/${POSTGRES_DB:smartdrive_auth}
+    username: ${POSTGRES_USER:smartdrive}
     password: ${POSTGRES_PASSWORD:password}
     driver-class-name: org.postgresql.Driver
   
@@ -24,7 +24,7 @@ spring:
         format_sql: true
   
   redis:
-    host: ${REDIS_HOST:localhost}
+    host: ${REDIS_HOST:redis}
     port: ${REDIS_PORT:6379}
     password: ${REDIS_PASSWORD:}
     timeout: 2000ms
