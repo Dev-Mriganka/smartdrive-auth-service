@@ -57,7 +57,6 @@ public class OAuth2Controller {
             userInfo.put("email", userProfile.get("email"));
             userInfo.put("email_verified", userProfile.get("isEmailVerified"));
             userInfo.put("picture", userProfile.get("profilePictureUrl"));
-            userInfo.put("phone_number", userProfile.get("phoneNumber"));
             userInfo.put("updated_at", userProfile.get("updatedAt"));
             
             log.info("✅ Userinfo retrieved successfully for user: {}", authentication.getName());
