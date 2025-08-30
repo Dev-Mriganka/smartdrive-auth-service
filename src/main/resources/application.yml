@@ -73,7 +73,7 @@ spring:
         format_sql: true
   
   redis:
-    host: ${REDIS_HOST:}
+    host: ${REDIS_HOST:redis}
     port: ${REDIS_PORT:6379}
     database: ${REDIS_DATABASE:0}
     password: ${REDIS_PASSWORD:}
@@ -134,15 +134,18 @@ management:
   endpoint:
     health:
       show-details: always
+  health:
+    redis:
+      enabled: false
 
 # Eureka Client Configuration
 eureka:
   client:
     service-url:
       defaultZone: http://eureka-server:8761/eureka/
-    register-with-eureka: false
-    fetch-registry: false
-    enabled: false
+    register-with-eureka: true
+    fetch-registry: true
+    enabled: true
   instance:
     prefer-ip-address: true
     hostname: auth-service
