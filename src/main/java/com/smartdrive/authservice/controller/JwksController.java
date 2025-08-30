@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.RSAKey;
+import com.smartdrive.authservice.config.JwtKeyConfig;
 
 import java.security.interfaces.RSAPublicKey;
 import java.security.KeyPair;
@@ -34,9 +35,8 @@ import java.util.Map;
 public class JwksController {
 
     private final JwtEncoder jwtEncoder;
-    
-    // In production, this should be loaded from configuration or key store
-    private static final KeyPair keyPair = generateKeyPair();
+    private final KeyPair jwtKeyPair;
+    private final String jwtKeyId;
 
     /**
      * JWKS endpoint for JWT public key distribution
@@ -50,14 +50,17 @@ public class JwksController {
     @GetMapping("/jwks.json")
     public ResponseEntity<Map<String, Object>> jwks() {
         log.debug("🔑 JWKS request - providing public keys for JWT validation");
+        log.info("🔍 JWKS using key ID: {}", jwtKeyId);
         
         try {
             // Create RSA JWK from public key
-            RSAKey rsaKey = new RSAKey.Builder((RSAPublicKey) keyPair.getPublic())
-                    .keyID("smartdrive-key-1")
+            RSAKey rsaKey = new RSAKey.Builder((RSAPublicKey) jwtKeyPair.getPublic())
+                    .keyID(jwtKeyId)
                     .algorithm(com.nimbusds.jose.Algorithm.parse("RS256"))
                     .keyUse(com.nimbusds.jose.jwk.KeyUse.SIGNATURE)
                     .build();
+                    
+            log.info("🔑 Created RSA key with ID: {}", rsaKey.getKeyID());
             
             // Create JWK Set
             JWKSet jwkSet = new JWKSet(rsaKey);

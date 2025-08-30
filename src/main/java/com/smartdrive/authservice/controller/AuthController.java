@@ -202,9 +202,9 @@ public class AuthController {
 
             // Step 2: Get fresh user claims from User Service
             log.debug("🔍 Getting fresh user claims from User Service");
-            // Extract username from the refresh token (simplified for demo)
-            String username = extractUsernameFromRefreshToken(refreshToken);
-            if (username == null) {
+            // Extract user ID from the refresh token
+            String userId = extractUserIdFromRefreshToken(refreshToken);
+            if (userId == null) {
                 log.warn("❌ Invalid refresh token");
                 Map<String, Object> errorResponse = new HashMap<>();
                 errorResponse.put("error", "invalid_grant");
@@ -212,9 +212,9 @@ public class AuthController {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(errorResponse);
             }
 
-            Map<String, Object> userClaims = userServiceClient.getUserTokenClaims(username);
+            Map<String, Object> userClaims = userServiceClient.getUserTokenClaimsById(userId);
             if (userClaims.isEmpty()) {
-                log.error("❌ Failed to get user claims for refresh: {}", username);
+                log.error("❌ Failed to get user claims for refresh: {}", userId);
                 Map<String, Object> errorResponse = new HashMap<>();
                 errorResponse.put("error", "user_claims_error");
                 errorResponse.put("error_description", "Failed to retrieve user information");
@@ -234,7 +234,7 @@ public class AuthController {
             response.put("expires_in", 1800); // 30 minutes
             response.put("scope", "openid profile email");
 
-            log.info("✅ Token refresh successful for user: {}", username);
+            log.info("✅ Token refresh successful for user ID: {}", userId);
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
@@ -243,6 +243,38 @@ public class AuthController {
             errorResponse.put("error", "server_error");
             errorResponse.put("error_description", "An internal server error occurred during token refresh");
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+    /**
+     * Extract user ID from refresh token (simplified implementation)
+     * In production, use proper JWT decoding and validation
+     */
+    private String extractUserIdFromRefreshToken(String refreshToken) {
+        try {
+            // Decode JWT token without verification (for demo purposes)
+            // In production, you MUST verify the token signature and expiration
+            String[] parts = refreshToken.split("\\.");
+            if (parts.length != 3) {
+                return null;
+            }
+
+            // Decode payload
+            String payload = new String(java.util.Base64.getUrlDecoder().decode(parts[1]));
+
+            // Extract user ID from sub claim
+            if (payload.contains("\"sub\":")) {
+                String[] subParts = payload.split("\"sub\":\"");
+                if (subParts.length > 1) {
+                    String userId = subParts[1].split("\"")[0];
+                    return userId;
+                }
+            }
+
+            return null;
+        } catch (Exception e) {
+            log.error("❌ Error extracting user ID from refresh token", e);
+            return null;
         }
     }
 
@@ -262,19 +294,32 @@ public class AuthController {
             // Decode payload
             String payload = new String(java.util.Base64.getUrlDecoder().decode(parts[1]));
 
-            // Simple JSON parsing to extract username
-            // In production, use proper JSON library
-            if (payload.contains("\"username\":")) {
-                String[] usernameParts = payload.split("\"username\":\"");
-                if (usernameParts.length > 1) {
-                    String username = usernameParts[1].split("\"")[0];
-                    return username;
+            // Extract user ID from sub claim
+            if (payload.contains("\"sub\":")) {
+                String[] subParts = payload.split("\"sub\":\"");
+                if (subParts.length > 1) {
+                    String userId = subParts[1].split("\"")[0];
+                    // Get username from user service using user ID
+                    return getUsernameById(userId);
                 }
             }
 
             return null;
         } catch (Exception e) {
             log.error("❌ Error extracting username from refresh token", e);
+            return null;
+        }
+    }
+
+    /**
+     * Get username by user ID from user service
+     */
+    private String getUsernameById(String userId) {
+        try {
+            Map<String, Object> userClaims = userServiceClient.getUserTokenClaimsById(userId);
+            return (String) userClaims.get("username");
+        } catch (Exception e) {
+            log.error("❌ Error getting username for user ID: {}", userId, e);
             return null;
         }
     }

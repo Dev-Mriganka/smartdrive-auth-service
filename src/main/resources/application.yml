@@ -6,7 +6,56 @@ spring:
     name: auth-service
   
   profiles:
-    active: docker
+    active: local
+  
+  datasource:
+    url: jdbc:h2:mem:authdb
+    username: sa
+    password: password
+    driver-class-name: org.h2.Driver
+  
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+        format_sql: true
+  
+  h2:
+    console:
+      enabled: true
+  
+  redis:
+    host: ${REDIS_HOST:localhost}
+    port: ${REDIS_PORT:6379}
+    database: ${REDIS_DATABASE:0}
+    password: ${REDIS_PASSWORD:}
+    timeout: 2000ms
+    lettuce:
+      pool:
+        max-active: 8
+        max-idle: 8
+        min-idle: 0
+        max-wait: -1ms
+  
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: ${GOOGLE_CLIENT_ID:your-google-client-id}
+            client-secret: ${GOOGLE_CLIENT_SECRET:your-google-client-secret}
+            redirect-uri: "{baseUrl}/oauth2/social/google/callback"
+            scope: openid, profile, email
+
+---
+# Docker profile (original configuration)
+spring:
+  config:
+    activate:
+      on-profile: docker
   
   datasource:
     url: jdbc:postgresql://${POSTGRES_HOST:postgres-auth}:${POSTGRES_PORT:5432}/${POSTGRES_DB:smartdrive_auth}
@@ -85,3 +134,15 @@ management:
   endpoint:
     health:
       show-details: always
+
+# Eureka Client Configuration
+eureka:
+  client:
+    service-url:
+      defaultZone: http://eureka-server:8761/eureka/
+    register-with-eureka: false
+    fetch-registry: false
+    enabled: false
+  instance:
+    prefer-ip-address: true
+    hostname: auth-service

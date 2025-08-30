@@ -26,6 +26,7 @@ repositories {
 dependencyManagement {
     imports {
         mavenBom "software.amazon.awssdk:bom:2.27.21"
+        mavenBom "org.springframework.cloud:spring-cloud-dependencies:2025.0.0"
     }
 }
 
@@ -38,17 +39,24 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-aop'
     
+    // Service Discovery
+    implementation 'org.springframework.cloud:spring-cloud-starter-netflix-eureka-client'
+    
     // OAuth2 Authorization Server (Latest Spring Authorization Server)
     implementation 'org.springframework.security:spring-security-oauth2-authorization-server:1.5.0'
     
     // OAuth2 Client for Social Login
     implementation 'org.springframework.boot:spring-boot-starter-oauth2-client'
     
+    // WebFlux for reactive HTTP client (WebClient)
+    implementation 'org.springframework.boot:spring-boot-starter-webflux'
+    
     // Social Login Providers
     implementation 'org.springframework.security:spring-security-oauth2-jose'
     
     // Database
     implementation 'org.postgresql:postgresql'
+    runtimeOnly 'com.h2database:h2'
     
     // Modern JWT Library (Replacing deprecated JJWT)
     implementation 'com.nimbusds:nimbus-jose-jwt:9.37.3'
