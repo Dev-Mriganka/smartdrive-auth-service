@@ -142,6 +142,36 @@ public class RedisTokenBlacklistService {
     }
 
     /**
+     * Check if any token (access or refresh) is blacklisted
+     * This is the main method used by the validation endpoint
+     */
+    public boolean isTokenBlacklisted(String token) {
+        try {
+            Jwt jwt = jwtDecoder.decode(token);
+            String tokenId = jwt.getId();
+            String tokenType = jwt.getClaimAsString("token_type");
+
+            if (tokenId == null) {
+                return false;
+            }
+
+            String key;
+            if ("refresh".equals(tokenType)) {
+                key = BLACKLIST_PREFIX + "refresh:" + tokenId;
+            } else {
+                key = BLACKLIST_PREFIX + "access:" + tokenId;
+            }
+
+            Boolean isBlacklisted = redisTemplate.hasKey(key);
+            return Boolean.TRUE.equals(isBlacklisted);
+
+        } catch (JwtException e) {
+            log.warn("⚠️ Cannot decode token for blacklist check: {}", e.getMessage());
+            return true; // Treat invalid tokens as blacklisted
+        }
+    }
+
+    /**
      * Cache JWT validation result to improve performance
      * Caches valid JWTs for a short period to avoid repeated decoding
      */

@@ -74,6 +74,16 @@ public interface AuthUserRepository extends JpaRepository<AuthUser, UUID> {
     List<AuthUser> findByUpdatedAtAfter(LocalDateTime date);
 
     /**
+     * Find users updated after a specific date (for email audit)
+     */
+    List<AuthUser> findByUpdatedAtAfter(LocalDateTime updatedAt);
+
+    /**
+     * Find users by email list (for batch lookup)
+     */
+    List<AuthUser> findByEmailIn(List<String> emails);
+
+    /**
      * Count locked users
      */
     long countByAccountLocked(Boolean accountLocked);

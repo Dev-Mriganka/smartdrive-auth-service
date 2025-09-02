@@ -29,6 +29,7 @@ import com.smartdrive.authservice.repository.AuthUserRepository;
 import com.smartdrive.authservice.service.AuthEventPublisher;
 import com.smartdrive.authservice.service.RedisTokenBlacklistService;
 import com.smartdrive.authservice.service.RefreshTokenService;
+import com.smartdrive.authservice.service.AuthenticationService;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -67,6 +68,7 @@ public class AuthController {
     private final AuthEventPublisher authEventPublisher;
     private final PasswordEncoder passwordEncoder;
     private final com.smartdrive.authservice.repository.VerificationTokenRepository verificationTokenRepository;
+    private final AuthenticationService authenticationService;
 
     /**
      * Verify email endpoint per sequence diagram
@@ -202,99 +204,77 @@ public class AuthController {
     /**
      * Custom login endpoint for UI integration
      * 
-     * Implements the complete authentication flow:
+     * Implements the complete authentication flow from sequence diagram:
      * 1. Receives login request from API Gateway
-     * 2. Calls User Service to verify credentials
-     * 3. Gets user claims from User Service
-     * 4. Issues JWT tokens
-     * 
-     * This maintains the proper separation of concerns while providing
-     * a direct endpoint for UI authentication.
+     * 2. Validates credentials locally in Auth Service
+     * 3. Calls User Service to get complete user profile data
+     * 4. Generates JWT with complete claims from BOTH databases
+     * 5. Issues JWT tokens with full user information
+     *
+     * This maintains proper separation of concerns while providing
+     * complete user data in JWT tokens for efficient API gateway validation.
      */
     @PostMapping("/login")
     public ResponseEntity<Map<String, Object>> login(@Valid @RequestBody LoginRequest loginRequest) {
-        log.info("🔐 OAuth Server received login request via API Gateway for user: {}",
-                loginRequest.getEmail());
-        log.info("📊 Starting authentication flow: User → API Gateway → OAuth Server → Local Verification");
+        log.info("🔐 Login request received for user: {}", loginRequest.getEmail());
+        log.info("📊 Starting authentication flow: Client → API Gateway → Auth Service");
 
         try {
-            // Step 1: Verify credentials locally using auth service repository
-            log.debug("🔍 Step 1: Verifying credentials locally");
-            Optional<AuthUser> authUserOpt = authUserRepository.findByEmail(loginRequest.getEmail().toLowerCase().trim());
-            
-            if (authUserOpt.isEmpty()) {
-                log.warn("❌ User not found: {}", loginRequest.getEmail());
+            // Step 1: Use AuthenticationService for complete authentication logic
+            log.debug("🔍 Step 1: Using AuthenticationService for complete authentication");
+            var authResult = authenticationService.authenticateUser(loginRequest.getEmail(), loginRequest.getPassword());
+
+            if (!authResult.isSuccess()) {
+                log.warn("❌ Authentication failed: {}", authResult.getErrorMessage());
                 Map<String, Object> errorResponse = new HashMap<>();
-                errorResponse.put("error", "invalid_credentials");
-                errorResponse.put("error_description", "Invalid email or password");
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(errorResponse);
-            }
-            
-            AuthUser authUser = authUserOpt.get();
-            
-            // Verify password
-            if (!passwordEncoder.matches(loginRequest.getPassword(), authUser.getPasswordHash())) {
-                log.warn("❌ Invalid password for user: {}", loginRequest.getEmail());
-                Map<String, Object> errorResponse = new HashMap<>();
-                errorResponse.put("error", "invalid_credentials");
-                errorResponse.put("error_description", "Invalid email or password");
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(errorResponse);
-            }
 
-            log.debug("✅ Step 1 Complete: Credentials verified successfully locally");
-
-            // Step 2: Check if user is enabled and email verified
-            if (authUser.isLocked()) {
-                log.warn("❌ User account locked: {}", loginRequest.getEmail());
-                Map<String, Object> errorResponse = new HashMap<>();
-                errorResponse.put("error", "account_locked");
-                errorResponse.put("error_description", "User account is locked");
-                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(errorResponse);
+                if ("Account is locked".equals(authResult.getErrorMessage())) {
+                    errorResponse.put("error", "account_locked");
+                    errorResponse.put("error_description", "User account is locked");
+                    return ResponseEntity.status(HttpStatus.FORBIDDEN).body(errorResponse);
+                } else if ("Email verification required".equals(authResult.getErrorMessage())) {
+                    errorResponse.put("error", "email_not_verified");
+                    errorResponse.put("error_description", "Please verify your email address before signing in");
+                    return ResponseEntity.status(HttpStatus.FORBIDDEN).body(errorResponse);
+                } else {
+                    errorResponse.put("error", "invalid_credentials");
+                    errorResponse.put("error_description", "Invalid email or password");
+                    return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(errorResponse);
+                }
             }
 
-            // TEMPORARY: Bypass email verification for testing
-            if (!authUser.getEmailVerified()) {
-                log.warn("⚠️ Email not verified for user: {} - BYPASSING FOR TESTING", loginRequest.getEmail());
-                // Comment out the return statement to bypass email verification
-                // return ResponseEntity.status(HttpStatus.FORBIDDEN).body(errorResponse);
-            }
+            AuthUser authUser = authResult.getAuthUser();
+            log.debug("✅ Step 1 Complete: User authenticated successfully via AuthenticationService");
 
-            // Step 3: Create user claims for token generation
-            log.debug("🔍 Step 3: Creating user claims for token generation");
-            Map<String, Object> userClaims = new HashMap<>();
-            userClaims.put("user_id", authUser.getId().toString());
-            userClaims.put("email", authUser.getEmail());
-            userClaims.put("first_name", "User"); // Default values since we don't have profile yet
-            userClaims.put("last_name", "User");
-            userClaims.put("roles", java.util.List.of("USER")); // Default role
-            userClaims.put("is_enabled", !authUser.isLocked());
-            userClaims.put("is_email_verified", authUser.getEmailVerified());
+            // Step 2: Get complete user claims using AuthenticationService (eliminates hardcoded values)
+            log.debug("🔍 Step 2: Getting complete user claims via AuthenticationService");
+            Map<String, Object> completeUserClaims = authenticationService.getUserClaimsForToken(authUser);
+            log.debug("✅ Step 2 Complete: Complete user claims retrieved without hardcoded values");
 
-            log.debug("✅ Step 3 Complete: User claims created successfully");
+            // Step 3: Generate JWT tokens with complete user information
+            log.debug("🔍 Step 3: Generating JWT tokens with complete user claims");
+            String accessToken = generateAccessToken(completeUserClaims);
+            String refreshToken = generateRefreshToken(completeUserClaims);
 
-            // Step 4: OAuth Server issues JWT Token
-            log.debug("🔍 Step 4: OAuth Server generating JWT tokens");
-            String accessToken = generateAccessToken(userClaims);
-            String refreshToken = generateRefreshToken(userClaims);
-            
-            // Store refresh token metadata in Redis (temporarily disabled for testing)
+            // Step 4: Store refresh token metadata and create user session in Redis
             String userId = authUser.getId().toString();
             try {
                 redisTokenBlacklistService.storeRefreshTokenMetadata(refreshToken, userId);
                 
-                // Create user session
+                // Create user session for tracking
                 String sessionId = java.util.UUID.randomUUID().toString();
                 Jwt jwt = jwtDecoder.decode(accessToken);
                 String accessTokenId = jwt.getId();
                 redisTokenBlacklistService.createUserSession(userId, sessionId, accessTokenId);
-                log.debug("📝 Token generated successfully with Redis session management");
+
+                log.debug("📝 User session created with Redis session management");
             } catch (Exception e) {
                 log.warn("⚠️ Redis operations failed, continuing without Redis: {}", e.getMessage());
             }
             
-            log.debug("✅ Step 4 Complete: JWT tokens generated successfully");
+            log.debug("✅ Step 3 Complete: JWT tokens generated with complete user claims");
 
-            // Prepare response
+            // Step 5: Prepare response with tokens and user information
             Map<String, Object> response = new HashMap<>();
             response.put("access_token", accessToken);
             response.put("refresh_token", refreshToken);
@@ -302,17 +282,20 @@ public class AuthController {
             response.put("expires_in", 1800); // 30 minutes
             response.put("scope", "openid profile email");
 
-            // Add user info
+            // Add user info to response (for frontend convenience)
             Map<String, Object> userInfo = new HashMap<>();
             userInfo.put("id", authUser.getId().toString());
             userInfo.put("email", authUser.getEmail());
-            userInfo.put("firstName", "User"); // Default values
-            userInfo.put("lastName", "User");
-            userInfo.put("roles", java.util.List.of("USER"));
+            userInfo.put("name", completeUserClaims.get("name"));
+            userInfo.put("firstName", completeUserClaims.get("first_name"));
+            userInfo.put("lastName", completeUserClaims.get("last_name"));
+            userInfo.put("roles", completeUserClaims.get("roles"));
+            userInfo.put("subscription", completeUserClaims.get("subscription"));
+            userInfo.put("emailVerified", authUser.getEmailVerified());
 
             response.put("user", userInfo);
 
-            log.info("✅ Login successful for user: {}", loginRequest.getEmail());
+            log.info("✅ Login successful for user: {} with complete profile data", loginRequest.getEmail());
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
@@ -322,6 +305,24 @@ public class AuthController {
             errorResponse.put("error_description", "An internal server error occurred");
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
+    }
+
+    /**
+     * Create default user profile data when User Service is unavailable
+     * or user profile hasn't been created yet
+     */
+    private Map<String, Object> createDefaultUserProfile(AuthUser authUser) {
+        Map<String, Object> defaultProfile = new HashMap<>();
+        defaultProfile.put("name", "User");
+        defaultProfile.put("first_name", "User");
+        defaultProfile.put("last_name", "User");
+        defaultProfile.put("roles", java.util.List.of("USER"));
+        defaultProfile.put("subscription", "free");
+        defaultProfile.put("permissions", java.util.List.of());
+        defaultProfile.put("created_at", authUser.getCreatedAt());
+
+        log.debug("📝 Created default user profile for auth_user_id: {}", authUser.getId());
+        return defaultProfile;
     }
 
     /**
@@ -729,6 +730,74 @@ public class AuthController {
             response.put("revoked", true);
             response.put("message", "Token revocation processed");
             return ResponseEntity.ok(response);
+        }
+    }
+
+    /**
+     * Token validation endpoint for API Gateway
+     * POST /api/v1/auth/validate
+     *
+     * This implements the JWT validation flow from your sequence diagram:
+     * - API Gateway calls this endpoint to validate JWT tokens
+     * - Returns user claims for request enrichment
+     * - Supports caching for performance optimization
+     */
+    @PostMapping("/validate")
+    public ResponseEntity<Map<String, Object>> validateToken(@RequestBody Map<String, String> tokenRequest) {
+        log.info("🔍 Token validation request received from API Gateway");
+
+        try {
+            String token = tokenRequest.get("token");
+            if (token == null || token.trim().isEmpty()) {
+                log.warn("❌ Missing token in validation request");
+                Map<String, Object> errorResponse = new HashMap<>();
+                errorResponse.put("error", "invalid_request");
+                errorResponse.put("error_description", "Missing token parameter");
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
+            }
+
+            // Check if token is blacklisted in Redis
+            try {
+                if (redisTokenBlacklistService.isTokenBlacklisted(token)) {
+                    log.warn("❌ Token is blacklisted");
+                    Map<String, Object> errorResponse = new HashMap<>();
+                    errorResponse.put("error", "invalid_token");
+                    errorResponse.put("error_description", "Token has been revoked");
+                    return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(errorResponse);
+                }
+            } catch (Exception e) {
+                log.warn("⚠️ Redis check failed, continuing with JWT validation: {}", e.getMessage());
+            }
+
+            // Decode and validate JWT token
+            Jwt jwt = jwtDecoder.decode(token);
+            String userId = jwt.getSubject();
+            String email = jwt.getClaimAsString("email");
+
+            // Extract roles and other claims
+            Object rolesObj = jwt.getClaim("roles");
+            java.util.List<String> roles = rolesObj instanceof java.util.List ?
+                (java.util.List<String>) rolesObj : java.util.List.of("USER");
+
+            // Prepare validation response with user claims
+            Map<String, Object> response = new HashMap<>();
+            response.put("valid", true);
+            response.put("user_id", userId);
+            response.put("email", email);
+            response.put("roles", roles);
+            response.put("token_id", jwt.getId());
+            response.put("expires_at", jwt.getExpiresAt().toEpochMilli());
+
+            log.debug("✅ Token validation successful for user: {}", userId);
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+            log.warn("❌ Token validation failed: {}", e.getMessage());
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("valid", false);
+            errorResponse.put("error", "invalid_token");
+            errorResponse.put("error_description", "Token is invalid or expired");
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(errorResponse);
         }
     }
 

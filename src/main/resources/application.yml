@@ -1,9 +1,13 @@
-server:
+ server:
   port: 8082
 
 spring:
   application:
     name: auth-service
+
+  # Environment-based profiles configuration
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
 
   autoconfigure:
     exclude: 
@@ -18,7 +22,7 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: update  # Fresh project without migrations
+      ddl-auto: update
     show-sql: false
     properties:
       hibernate:
@@ -48,70 +52,95 @@ spring:
             redirect-uri: "{baseUrl}/oauth2/social/google/callback"
             scope: openid, profile, email
 
-# Disable Flyway for fresh project (no migrations)
-flyway:
-  enabled: false
-
-# Auth Service Configuration
+# Authentication Service Configuration
 auth:
   service:
-    internal:
-      key: ${AUTH_SERVICE_INTERNAL_KEY:internal-auth-key}
+    name: SmartDrive Auth Service
+    version: 1.0.0
 
-# User Service Configuration
+  jwt:
+    # JWT token configuration
+    access-token-expiry: 1800 # 30 minutes
+    refresh-token-expiry: 604800 # 7 days
+
+  security:
+    # Security settings that can be overridden per environment
+    enforce-email-verification: true
+    max-failed-login-attempts: 5
+    account-lockout-duration: 3600 # 1 hour
+
+  integration:
+    user-service:
+      url: ${USER_SERVICE_URL:http://user-service:8083}
+      timeout: 5000
+
+# Service URLs for inter-service communication
 user:
   service:
-    url: ${USER_SERVICE_URL:http://smartdrive-user-service:8086}
+    url: ${USER_SERVICE_URL:http://user-service:8083}
 
-# JWT Configuration
-jwt:
-  secret: ${JWT_SECRET:your-256-bit-secret-key-here-make-it-long-and-secure}
-  expiration: ${JWT_EXPIRATION:86400000}
-  refresh-expiration: ${JWT_REFRESH_EXPIRATION:604800000}
-  issuer: ${JWT_ISSUER:smartdrive-auth-service}
+# Internal service authentication
+gateway:
+  signature:
+    secret: ${GATEWAY_SIGNATURE_SECRET:signature-gateway-secret-key-2024-minimum-32-chars}
+  internal:
+    auth:
+      key: ${GATEWAY_INTERNAL_SECRET:internal-gateway-secret-key-2024-minimum-32-chars}
 
-# CORS Configuration
-cors:
-  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173,http://localhost:5174,http://localhost:8080}
+# Logging configuration
+logging:
+  level:
+    com.smartdrive.authservice: INFO
+    org.springframework.security: WARN
+    org.springframework.web: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
 
-# Logging
+---
+# Development Profile
+spring:
+  config:
+    activate:
+      on-profile: dev
+
+  jpa:
+    show-sql: true
+    hibernate:
+      ddl-auto: update
+
+auth:
+  security:
+    # More permissive settings for development
+    enforce-email-verification: false # Allow login without email verification in dev
+    max-failed-login-attempts: 10
+
 logging:
   level:
     com.smartdrive.authservice: DEBUG
     org.springframework.security: DEBUG
-  pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+    root: INFO
 
-# Management endpoints
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info,metrics
-  endpoint:
-    health:
-      show-details: always
-  health:
-    redis:
-      enabled: false
+---
+# Production Profile
+spring:
+  config:
+    activate:
+      on-profile: prod
 
-# Eureka Client Configuration
-eureka:
-  client:
-    service-url:
-      defaultZone: http://eureka-server:8761/eureka/
-    register-with-eureka: true
-    fetch-registry: true
-    enabled: true
-  instance:
-    prefer-ip-address: true
-    hostname: smartdrive-auth-service
+  jpa:
+    show-sql: false
+    hibernate:
+      ddl-auto: validate # Don't auto-update schema in production
 
-# AWS SQS Configuration for Event Publishing
-aws:
-  region: ${AWS_REGION:us-east-1}
-  credentials:
-    access-key: ${AWS_ACCESS_KEY_ID}
-    secret-key: ${AWS_SECRET_ACCESS_KEY}
-  sqs:
-    endpoint: ${AWS_SQS_ENDPOINT:https://sqs.us-east-1.amazonaws.com}
+auth:
+  security:
+    # Strict security settings for production
+    enforce-email-verification: true
+    max-failed-login-attempts: 3
+    account-lockout-duration: 7200 # 2 hours
+
+logging:
+  level:
+    com.smartdrive.authservice: INFO
+    org.springframework.security: WARN
+    root: WARN

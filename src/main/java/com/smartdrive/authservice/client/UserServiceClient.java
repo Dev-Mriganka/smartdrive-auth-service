@@ -217,6 +217,38 @@ public class UserServiceClient {
     }
     
     /**
+     * Get user profile by auth user ID for JWT generation
+     * This is called during login to get complete user profile data
+     */
+    public Map<String, Object> getUserProfileByAuthId(String authUserId) {
+        log.info("👤 Getting user profile for auth user ID: {}", authUserId);
+
+        try {
+            HttpHeaders headers = createGatewayHeaders(null, "/api/v1/users/profile-by-auth-id/" + authUserId);
+            HttpEntity<Void> entity = new HttpEntity<>(headers);
+
+            ResponseEntity<Map> response = restTemplate.exchange(
+                userServiceUrl + "/api/v1/users/profile-by-auth-id/" + authUserId,
+                HttpMethod.GET,
+                entity,
+                Map.class
+            );
+
+            if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+                log.info("✅ Retrieved user profile for auth user ID: {}", authUserId);
+                return response.getBody();
+            } else {
+                log.warn("⚠️ User profile not found for auth user ID: {}", authUserId);
+                return Map.of();
+            }
+
+        } catch (Exception e) {
+            log.error("❌ Error getting user profile for auth user ID: {}", authUserId, e);
+            return Map.of();
+        }
+    }
+
+    /**
      * Create gateway headers with proper authentication and signature
      */
     private HttpHeaders createGatewayHeaders(String userId, String path) {
