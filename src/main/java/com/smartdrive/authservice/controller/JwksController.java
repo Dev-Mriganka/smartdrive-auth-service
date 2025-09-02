@@ -1,120 +1,99 @@
 package com.smartdrive.authservice.controller;
 
+import com.nimbusds.jose.jwk.JWKSet;
+import com.nimbusds.jose.jwk.source.JWKSource;
+import com.nimbusds.jose.proc.SecurityContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.nimbusds.jose.jwk.JWKSet;
-import com.nimbusds.jose.jwk.RSAKey;
-import com.smartdrive.authservice.config.JwtKeyConfig;
-
-import java.security.interfaces.RSAPublicKey;
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
-import java.security.NoSuchAlgorithmException;
+import java.util.HashMap;
 import java.util.Map;
 
 /**
  * JWKS (JSON Web Key Set) Controller
  * 
- * This endpoint provides the public keys used to verify JWT tokens.
- * This enables the API Gateway to perform LOCAL JWT validation without
- * calling the auth service for each request (FAST validation!)
+ * This is the crucial endpoint that enables the industry-standard OAuth2 architecture:
+ * - Auth Service exposes public keys via /oauth2/jwks
+ * - API Gateway fetches these keys to validate JWT tokens
+ * - Enables stateless, decoupled JWT validation across services
  * 
- * Part of the optimized authentication flow:
- * Frontend → API Gateway → Local JWT Validation (using JWKS) → Microservice
+ * This follows RFC 7517 (JSON Web Key) and RFC 7518 (JSON Web Algorithms)
  */
 @RestController
-@RequestMapping("/.well-known")
+@RequestMapping("/oauth2")
 @RequiredArgsConstructor
 @Slf4j
 public class JwksController {
 
-    private final JwtEncoder jwtEncoder;
-    private final KeyPair jwtKeyPair;
-    private final String jwtKeyId;
+    private final JWKSource<SecurityContext> jwkSource;
 
     /**
-     * JWKS endpoint for JWT public key distribution
+     * JWKS Endpoint - RFC 7517
      * 
      * This endpoint is called by:
-     * 1. API Gateway during startup to get public keys
-     * 2. API Gateway periodically to refresh keys
+     * 1. API Gateway to fetch public keys for JWT validation
+     * 2. Client applications for token verification
+     * 3. Other microservices that need to validate our JWTs
      * 
-     * This enables FAST local JWT validation in API Gateway!
+     * The response contains RSA public keys that can verify JWT signatures
+     * created by this Auth Service's private keys.
      */
-    @GetMapping("/jwks.json")
+    @GetMapping("/jwks")
     public ResponseEntity<Map<String, Object>> jwks() {
-        log.debug("🔑 JWKS request - providing public keys for JWT validation");
-        log.info("🔍 JWKS using key ID: {}", jwtKeyId);
-        
         try {
-            // Create RSA JWK from public key
-            RSAKey rsaKey = new RSAKey.Builder((RSAPublicKey) jwtKeyPair.getPublic())
-                    .keyID(jwtKeyId)
-                    .algorithm(com.nimbusds.jose.Algorithm.parse("RS256"))
-                    .keyUse(com.nimbusds.jose.jwk.KeyUse.SIGNATURE)
-                    .build();
-                    
-            log.info("🔑 Created RSA key with ID: {}", rsaKey.getKeyID());
+            // Get the current JWK Set with all available keys
+            JWKSet jwkSet = new JWKSet(jwkSource.get(null, null));
             
-            // Create JWK Set
-            JWKSet jwkSet = new JWKSet(rsaKey);
+            log.debug("🔑 JWKS endpoint called - returning {} keys", jwkSet.size());
+            log.debug("📊 Key IDs in set: {}", 
+                jwkSet.getKeys().stream()
+                    .map(key -> key.getKeyID())
+                    .toList());
             
-            // Return as JSON
-            Map<String, Object> jwksJson = jwkSet.toJSONObject();
+            // Convert to standard JWKS format
+            Map<String, Object> jwksResponse = jwkSet.toJSONObject();
             
-            log.debug("✅ JWKS provided successfully");
-            return ResponseEntity.ok(jwksJson);
-            
+            return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_JSON)
+                .header("Cache-Control", "public, max-age=3600") // Cache for 1 hour
+                .header("Access-Control-Allow-Origin", "*") // Allow cross-origin for public keys
+                .body(jwksResponse);
+                
         } catch (Exception e) {
-            log.error("❌ Error generating JWKS", e);
-            return ResponseEntity.status(500).body(Map.of(
-                "error", "server_error",
-                "error_description", "Unable to generate JWKS"
-            ));
+            log.error("❌ Failed to generate JWKS response", e);
+            return ResponseEntity.internalServerError().build();
         }
     }
 
     /**
-     * OpenID Connect Discovery endpoint
-     * Provides metadata about the auth server
+     * OpenID Connect Discovery Endpoint
+     * Provides metadata about this Authorization Server
      */
-    @GetMapping("/openid_configuration")
+    @GetMapping("/.well-known/openid-configuration")
     public ResponseEntity<Map<String, Object>> openidConfiguration() {
-        log.debug("🔍 OpenID Connect discovery request");
+        Map<String, Object> config = new HashMap<>();
+        config.put("issuer", "http://localhost:8082");
+        config.put("authorization_endpoint", "http://localhost:8082/oauth2/authorize");
+        config.put("token_endpoint", "http://localhost:8082/oauth2/token");
+        config.put("jwks_uri", "http://localhost:8082/oauth2/jwks");
+        config.put("userinfo_endpoint", "http://localhost:8082/userinfo");
+        config.put("end_session_endpoint", "http://localhost:8082/connect/logout");
+        config.put("response_types_supported", new String[]{"code", "token", "id_token"});
+        config.put("subject_types_supported", new String[]{"public"});
+        config.put("id_token_signing_alg_values_supported", new String[]{"RS256"});
+        config.put("scopes_supported", new String[]{"openid", "profile", "email", "read", "write"});
+        config.put("claims_supported", new String[]{"sub", "aud", "iss", "exp", "iat", "email", "name", "roles"});
         
-        Map<String, Object> config = Map.of(
-            "issuer", "http://auth-service:8085",
-            "authorization_endpoint", "http://auth-service:8085/oauth2/authorize",
-            "token_endpoint", "http://auth-service:8085/api/v1/auth/login",
-            "userinfo_endpoint", "http://auth-service:8085/oauth2/userinfo", 
-            "jwks_uri", "http://auth-service:8085/.well-known/jwks.json",
-            "scopes_supported", new String[]{"openid", "profile", "email"},
-            "response_types_supported", new String[]{"code", "token"},
-            "grant_types_supported", new String[]{"authorization_code", "refresh_token"},
-            "token_endpoint_auth_methods_supported", new String[]{"client_secret_post", "client_secret_basic"},
-            "claims_supported", new String[]{"sub", "name", "email", "preferred_username", "given_name", "family_name"}
-        );
+        log.debug("📋 OpenID Connect configuration requested");
         
-        return ResponseEntity.ok(config);
-    }
-
-    /**
-     * Generate RSA key pair for JWT signing
-     * In production, load from secure key store
-     */
-    private static KeyPair generateKeyPair() {
-        try {
-            KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("RSA");
-            keyPairGenerator.initialize(2048);
-            return keyPairGenerator.generateKeyPair();
-        } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException("Unable to generate RSA key pair", e);
-        }
+        return ResponseEntity.ok()
+            .contentType(MediaType.APPLICATION_JSON)
+            .header("Cache-Control", "public, max-age=86400") // Cache for 24 hours
+            .body(config);
     }
 }

@@ -30,9 +30,7 @@ public class RefreshTokenService {
     
     private final JwtEncoder jwtEncoder;
     private final JwtDecoder jwtDecoder;
-    
-    // In production, use Redis or database for token storage
-    private final ConcurrentHashMap<String, Boolean> invalidatedTokens = new ConcurrentHashMap<>();
+    private final RedisTokenBlacklistService redisTokenBlacklistService;
     
     /**
      * Generate refresh token following your JWT structure specification:
@@ -72,13 +70,20 @@ public class RefreshTokenService {
      * 1. JWT signature and structure
      * 2. Token expiry
      * 3. Token type (must be "refresh")
-     * 4. Token not in invalidated list
+     * 4. Token not blacklisted in Redis
      */
     public boolean isValidRefreshToken(String refreshToken) {
         try {
-            // Check if token is in invalidated list
-            if (invalidatedTokens.containsKey(refreshToken)) {
-                log.warn("❌ Refresh token is invalidated");
+            // Check cached validation first
+            Boolean cachedResult = redisTokenBlacklistService.getCachedJwtValidation(refreshToken);
+            if (cachedResult != null) {
+                return cachedResult;
+            }
+            
+            // Check if token is blacklisted in Redis
+            if (redisTokenBlacklistService.isRefreshTokenBlacklisted(refreshToken)) {
+                log.warn("❌ Refresh token is blacklisted");
+                redisTokenBlacklistService.cacheJwtValidation(refreshToken, false);
                 return false;
             }
             
@@ -88,6 +93,7 @@ public class RefreshTokenService {
             // Check if token is expired
             if (jwt.getExpiresAt().isBefore(Instant.now())) {
                 log.warn("❌ Refresh token is expired");
+                redisTokenBlacklistService.cacheJwtValidation(refreshToken, false);
                 return false;
             }
             
@@ -95,14 +101,20 @@ public class RefreshTokenService {
             String tokenType = jwt.getClaimAsString("token_type");
             if (!"refresh".equals(tokenType)) {
                 log.warn("❌ Invalid token type: {}", tokenType);
+                redisTokenBlacklistService.cacheJwtValidation(refreshToken, false);
                 return false;
             }
             
+            // Update last used timestamp
+            redisTokenBlacklistService.updateRefreshTokenLastUsed(refreshToken);
+            
             log.debug("✅ Refresh token is valid");
+            redisTokenBlacklistService.cacheJwtValidation(refreshToken, true);
             return true;
             
         } catch (JwtException e) {
             log.warn("❌ Invalid JWT refresh token: {}", e.getMessage());
+            redisTokenBlacklistService.cacheJwtValidation(refreshToken, false);
             return false;
         } catch (Exception e) {
             log.error("❌ Error validating refresh token", e);
@@ -128,39 +140,23 @@ public class RefreshTokenService {
     }
     
     /**
-     * Invalidate refresh token (security best practice)
-     * In production, store in Redis with TTL equal to token expiry
+     * Invalidate refresh token using Redis blacklist
      */
     public void invalidateToken(String refreshToken) {
         try {
-            invalidatedTokens.put(refreshToken, true);
+            redisTokenBlacklistService.blacklistRefreshToken(refreshToken);
             log.debug("🗑️ Refresh token invalidated successfully");
-            
-            // In production, also store in Redis:
-            // redisTemplate.opsForValue().set("invalidated:" + refreshToken, "true", Duration.ofDays(7));
-            
         } catch (Exception e) {
             log.error("❌ Error invalidating refresh token", e);
         }
     }
     
     /**
-     * Clean up expired invalidated tokens (periodic cleanup)
-     * In production, this would be handled by Redis TTL
+     * Clean up expired tokens and log statistics
+     * Redis TTL handles automatic cleanup
      */
     public void cleanupExpiredTokens() {
-        // This is a simplified implementation
-        // In production, Redis TTL handles this automatically
-        log.debug("🧹 Cleaning up expired invalidated tokens");
-        
-        invalidatedTokens.entrySet().removeIf(entry -> {
-            try {
-                var jwt = jwtDecoder.decode(entry.getKey());
-                return jwt.getExpiresAt().isBefore(Instant.now());
-            } catch (Exception e) {
-                // If we can't decode it, it's probably expired or invalid
-                return true;
-            }
-        });
+        log.debug("🧹 Running token cleanup and statistics");
+        redisTokenBlacklistService.cleanupExpiredTokens();
     }
 }

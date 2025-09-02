@@ -19,6 +19,7 @@ import java.util.Map;
 
 /**
  * Client for communicating with User Service
+ * Implements the Auth Service -> User Service calls from sequence diagram
  */
 @Component
 @RequiredArgsConstructor
@@ -27,111 +28,94 @@ public class UserServiceClient {
 
     private final RestTemplate restTemplate;
     
-    @Value("${user.service.url:http://user-service:8086}")
+    @Value("${user.service.url:http://user-service:8083}")
     private String userServiceUrl;
     
-    @Value("${auth.service.internal.key:internal-auth-key}")
+    @Value("${auth.service.internal.key:internal-gateway-secret-key-2024-minimum-32-chars}")
     private String internalAuthKey;
     
-    @Value("${gateway.signature.secret:signature-secret-key-2024-minimum-32-chars}")
+    @Value("${gateway.signature.secret:signature-gateway-secret-key-2024-minimum-32-chars}")
     private String signatureSecret;
 
     /**
-     * Verify user credentials
+     * Verify user credentials (placeholder - not implemented in current flow)
+     * In the current sequence diagram, Auth Service handles credentials directly
      */
-    public boolean verifyCredentials(String username, String password) {
-        log.info("🔐 Verifying credentials for user: {}", username);
-        
-        try {
-            HttpHeaders headers = createGatewayHeaders(null, "/api/v1/users/verify-credentials");
-            
-            Map<String, String> request = Map.of(
-                "username", username,
-                "password", password
-            );
-            
-            HttpEntity<Map<String, String>> entity = new HttpEntity<>(request, headers);
-            
-            ResponseEntity<Map> response = restTemplate.exchange(
-                userServiceUrl + "/api/v1/users/verify-credentials",
-                HttpMethod.POST,
-                entity,
-                Map.class
-            );
-            
-            boolean isValid = response.getStatusCode().is2xxSuccessful() && 
-                            response.getBody() != null && 
-                            Boolean.TRUE.equals(response.getBody().get("valid"));
-            
-            log.info("✅ Credential verification result for user {}: {}", username, isValid);
-            return isValid;
-            
-        } catch (Exception e) {
-            log.error("❌ Error verifying credentials for user: {}", username, e);
-            return false;
-        }
+    public boolean verifyCredentials(String email, String password) {
+        log.info("🔐 Verifying credentials for user: {}", email);
+        // In the current architecture, Auth Service handles credentials directly
+        // This method is kept for compatibility but not used in the main flow
+        return false;
     }
 
     /**
-     * Get user token claims for JWT generation
+     * Get user token claims for JWT generation by email
+     * This method finds the user by email first, then gets token claims
      */
-    public Map<String, Object> getUserTokenClaims(String username) {
-        log.info("👤 Getting token claims for user: {}", username);
+    public Map<String, Object> getUserTokenClaims(String email) {
+        log.info("👤 Getting token claims for user: {}", email);
         
         try {
-            HttpHeaders headers = createGatewayHeaders(null, "/api/v1/users/" + username + "/token-claims");
-            
+            // First get user profile by email to get auth_user_id
+            HttpHeaders headers = createGatewayHeaders(null, "/api/v1/users/profile/email/" + email);
             HttpEntity<Void> entity = new HttpEntity<>(headers);
             
-            ResponseEntity<Map> response = restTemplate.exchange(
-                userServiceUrl + "/api/v1/users/" + username + "/token-claims",
+            ResponseEntity<Map> profileResponse = restTemplate.exchange(
+                userServiceUrl + "/api/v1/users/profile/email/" + email,
                 HttpMethod.GET,
                 entity,
                 Map.class
             );
             
-            if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
-                log.info("✅ Retrieved token claims for user: {}", username);
-                return response.getBody();
-            } else {
-                log.warn("⚠️ Failed to get token claims for user: {}", username);
+            if (!profileResponse.getStatusCode().is2xxSuccessful() || profileResponse.getBody() == null) {
+                log.warn("⚠️ User profile not found for email: {}", email);
                 return Map.of();
             }
             
+            String authUserId = (String) profileResponse.getBody().get("authUserId");
+            if (authUserId == null) {
+                log.warn("⚠️ Auth user ID not found for email: {}", email);
+                return Map.of();
+            }
+            
+            // Now get token claims using auth_user_id
+            return getUserTokenClaimsById(authUserId);
+            
         } catch (Exception e) {
-            log.error("❌ Error getting token claims for user: {}", username, e);
+            log.error("❌ Error getting token claims for user: {}", email, e);
             return Map.of();
         }
     }
 
     /**
-     * Get user token claims by user ID for JWT generation
+     * Get user token claims by auth user ID for JWT generation
+     * This is the main method used during login flow as per sequence diagram
      */
-    public Map<String, Object> getUserTokenClaimsById(String userId) {
-        log.info("👤 Getting token claims for user ID: {}", userId);
+    public Map<String, Object> getUserTokenClaimsById(String authUserId) {
+        log.info("👤 Getting token claims for auth user ID: {}", authUserId);
         
         try {
-            HttpHeaders headers = createGatewayHeaders(null, "/api/v1/users/id/" + userId + "/token-claims");
+            HttpHeaders headers = createGatewayHeaders(null, "/api/v1/users/profile-by-auth-id/" + authUserId + "/token-claims");
             
             HttpEntity<Void> entity = new HttpEntity<>(headers);
             
             ResponseEntity<Map> response = restTemplate.exchange(
-                userServiceUrl + "/api/v1/users/id/" + userId + "/token-claims",
+                userServiceUrl + "/api/v1/users/profile-by-auth-id/" + authUserId + "/token-claims",
                 HttpMethod.GET,
                 entity,
                 Map.class
             );
             
             if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
-                log.info("✅ Retrieved token claims for user ID: {}", userId);
+                log.info("✅ Retrieved token claims for auth user ID: {}", authUserId);
                 return response.getBody();
             } else {
-                log.warn("⚠️ Failed to get token claims for user ID: {}", userId);
+                log.warn("⚠️ Failed to get token claims for auth user ID: {}", authUserId);
                 return Map.of();
             }
             
         } catch (Exception e) {
-            log.error("❌ Error getting token claims for user ID: {}", userId, e);
+            log.error("❌ Error getting token claims for auth user ID: {}", authUserId, e);
             return Map.of();
         }
     }
@@ -143,12 +127,12 @@ public class UserServiceClient {
         log.info("🔍 Getting user by email: {}", email);
         
         try {
-            HttpHeaders headers = createGatewayHeaders(null, "/api/v1/users/email/" + email + "/token-claims");
+            HttpHeaders headers = createGatewayHeaders(null, "/api/v1/users/profile/email/" + email);
             
             HttpEntity<Void> entity = new HttpEntity<>(headers);
             
             ResponseEntity<Map> response = restTemplate.exchange(
-                userServiceUrl + "/api/v1/users/email/" + email + "/token-claims",
+                userServiceUrl + "/api/v1/users/profile/email/" + email,
                 HttpMethod.GET,
                 entity,
                 Map.class
@@ -169,7 +153,7 @@ public class UserServiceClient {
     }
 
     /**
-     * Create user from Google OAuth2 profile
+     * Create user from Google OAuth2 profile (placeholder)
      */
     public Map<String, Object> createGoogleUser(Map<String, Object> userData) {
         log.info("👤 Creating user from Google OAuth2: {}", userData.get("email"));
@@ -201,34 +185,34 @@ public class UserServiceClient {
     }
 
     /**
-     * Get user profile for userinfo endpoint
+     * Link existing user account to Google OAuth2 (placeholder)
      */
-    public Map<String, Object> getUserProfile(String username) {
-        log.info("👤 Getting user profile for: {}", username);
+    public Map<String, Object> linkGoogleAccount(String email, Map<String, Object> googleData) {
+        log.info("🔗 Linking Google account for user: {}", email);
         
         try {
-            HttpHeaders headers = createGatewayHeaders(null, "/api/v1/users/" + username + "/profile");
+            HttpHeaders headers = createGatewayHeaders(null, "/api/v1/users/" + email + "/link-google");
             
-            HttpEntity<Void> entity = new HttpEntity<>(headers);
+            HttpEntity<Map<String, Object>> entity = new HttpEntity<>(googleData, headers);
             
             ResponseEntity<Map> response = restTemplate.exchange(
-                userServiceUrl + "/api/v1/users/" + username + "/profile",
-                HttpMethod.GET,
+                userServiceUrl + "/api/v1/users/" + email + "/link-google",
+                HttpMethod.PUT,
                 entity,
                 Map.class
             );
             
             if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
-                log.info("✅ Retrieved user profile for: {}", username);
+                log.info("✅ Successfully linked Google account for user: {}", email);
                 return response.getBody();
             } else {
-                log.warn("⚠️ Failed to get user profile for: {}", username);
+                log.warn("⚠️ Failed to link Google account for user: {}", email);
                 return Map.of();
             }
             
         } catch (Exception e) {
-            log.error("❌ Error getting user profile for: {}", username, e);
-            return Map.of();
+            log.error("❌ Error linking Google account for user: {}", email, e);
+            throw new RuntimeException("Failed to link Google account", e);
         }
     }
     
