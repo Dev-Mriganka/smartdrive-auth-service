@@ -69,14 +69,9 @@ public interface AuthUserRepository extends JpaRepository<AuthUser, UUID> {
     List<AuthUser> findByProvider(String provider);
 
     /**
-     * Find users updated after a specific date (for consistency checks)
+     * Find users updated after a specific date (for consistency checks and email audit)
      */
     List<AuthUser> findByUpdatedAtAfter(LocalDateTime date);
-
-    /**
-     * Find users updated after a specific date (for email audit)
-     */
-    List<AuthUser> findByUpdatedAtAfter(LocalDateTime updatedAt);
 
     /**
      * Find users by email list (for batch lookup)
