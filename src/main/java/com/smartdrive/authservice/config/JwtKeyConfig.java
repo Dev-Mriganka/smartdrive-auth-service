@@ -105,4 +105,31 @@ public class JwtKeyConfig {
         log.info("🔍 Created JWT decoder with RSA public key validation");
         return jwtDecoder;
     }
+    
+    /**
+     * Get JWK Set for JWKS endpoint
+     * Used by SimpleJwksController to expose the JWKS endpoint
+     */
+    public JWKSet getJwkSet() {
+        try {
+            RSAKey rsaKey = rsaKey(rsaKeyPair());
+            return new JWKSet(rsaKey);
+        } catch (Exception e) {
+            log.error("❌ Error getting JWK Set: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to get JWK Set", e);
+        }
+    }
+    
+    /**
+     * Get RSA Key for JWKS endpoint
+     * Used by SimpleJwksController to expose the JWKS endpoint
+     */
+    public RSAKey getRsaKey() {
+        try {
+            return rsaKey(rsaKeyPair());
+        } catch (Exception e) {
+            log.error("❌ Error getting RSA Key: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to get RSA Key", e);
+        }
+    }
 }

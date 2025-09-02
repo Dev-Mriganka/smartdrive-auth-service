@@ -2,6 +2,7 @@ package com.smartdrive.authservice.controller;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Profile;
 import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationConsentService;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService;
@@ -18,7 +19,11 @@ import java.security.Principal;
 import java.util.HashMap;
 import java.util.Map;
 
+/**
+ * OAuth2 Consent Controller for handling user consent during authorization
+ */
 @Controller
+@Profile("!docker") // Disable temporarily for debugging
 @RequiredArgsConstructor
 @Slf4j
 public class OAuth2ConsentController {

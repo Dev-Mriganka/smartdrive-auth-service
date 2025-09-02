@@ -34,19 +34,19 @@ public class SQSConfig {
     }
 
     /**
-     * Queue names for different events
+     * Queue URLs for different events
      */
-    public static class QueueNames {
-        public static final String USER_REGISTERED_QUEUE = "smartdrive-user-registered-queue";
-        public static final String EMAIL_VERIFIED_QUEUE = "smartdrive-email-verified-queue";
-        public static final String EMAIL_CHANGED_QUEUE = "smartdrive-email-changed-queue";
+    public static class QueueUrls {
+        public static final String USER_REGISTERED_QUEUE = "https://sqs.us-east-1.amazonaws.com/159014723710/smartdrive-user-registered-queue";
+        public static final String EMAIL_VERIFIED_QUEUE = "https://sqs.us-east-1.amazonaws.com/159014723710/smartdrive-email-verified-queue";
+        public static final String EMAIL_CHANGED_QUEUE = "https://sqs.us-east-1.amazonaws.com/159014723710/smartdrive-email-changed-queue";
     }
 
     /**
-     * Expose QueueNames as a bean for constructor injection
+     * Expose QueueUrls as a bean for constructor injection
      */
     @Bean
-    public QueueNames queueNames() {
-        return new QueueNames();
+    public QueueUrls queueUrls() {
+        return new QueueUrls();
     }
 }

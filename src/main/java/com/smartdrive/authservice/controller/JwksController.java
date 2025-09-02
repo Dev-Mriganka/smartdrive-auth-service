@@ -5,6 +5,7 @@ import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.proc.SecurityContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Profile;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -26,6 +27,7 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/oauth2")
+@Profile("!docker") // Disable temporarily for debugging
 @RequiredArgsConstructor
 @Slf4j
 public class JwksController {

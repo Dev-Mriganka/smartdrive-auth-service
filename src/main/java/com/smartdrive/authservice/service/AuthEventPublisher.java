@@ -6,7 +6,6 @@ import org.springframework.stereotype.Service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.smartdrive.authservice.config.SQSConfig;
-import com.smartdrive.authservice.config.SQSConfig.QueueNames;
 import com.smartdrive.authservice.dto.events.EmailChangedEvent;
 import com.smartdrive.authservice.dto.events.EmailVerifiedEvent;
 import com.smartdrive.authservice.dto.events.UserRegisteredEvent;
@@ -28,7 +27,7 @@ public class AuthEventPublisher {
 
     private final SqsClient sqsClient;
     private final ObjectMapper objectMapper;
-    private final QueueNames queueNames;
+    private final SQSConfig.QueueUrls queueUrls;
 
     /**
      * Publish user registration event
@@ -42,7 +41,7 @@ public class AuthEventPublisher {
             String messageBody = objectMapper.writeValueAsString(event);
 
             SendMessageRequest request = SendMessageRequest.builder()
-                    .queueUrl(getQueueUrl(SQSConfig.QueueNames.USER_REGISTERED_QUEUE))
+                    .queueUrl(SQSConfig.QueueUrls.USER_REGISTERED_QUEUE)
                     .messageBody(messageBody)
                     .build();
 
@@ -67,7 +66,7 @@ public class AuthEventPublisher {
             String messageBody = objectMapper.writeValueAsString(event);
 
             SendMessageRequest request = SendMessageRequest.builder()
-                    .queueUrl(getQueueUrl(SQSConfig.QueueNames.EMAIL_VERIFIED_QUEUE))
+                    .queueUrl(SQSConfig.QueueUrls.EMAIL_VERIFIED_QUEUE)
                     .messageBody(messageBody)
                     .build();
 
@@ -92,7 +91,7 @@ public class AuthEventPublisher {
             String messageBody = objectMapper.writeValueAsString(event);
 
             SendMessageRequest request = SendMessageRequest.builder()
-                    .queueUrl(getQueueUrl(SQSConfig.QueueNames.EMAIL_CHANGED_QUEUE))
+                    .queueUrl(SQSConfig.QueueUrls.EMAIL_CHANGED_QUEUE)
                     .messageBody(messageBody)
                     .build();
 
@@ -107,15 +106,5 @@ public class AuthEventPublisher {
         }
     }
 
-    /**
-     * Get queue URL for a given queue name
-     */
-    private String getQueueUrl(String queueName) {
-        try {
-            return sqsClient.getQueueUrl(builder -> builder.queueName(queueName)).queueUrl();
-        } catch (Exception e) {
-            log.error("❌ Failed to get queue URL for queue: {}", queueName, e);
-            throw new RuntimeException("Failed to get queue URL for: " + queueName, e);
-        }
-    }
+
 }
